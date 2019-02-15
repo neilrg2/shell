@@ -9,12 +9,16 @@
 #define EXIT            "exit\n"
 
 
-int main(int argc, const char * argv[])
+int main(int argc, const char *argv[])
 {
-//    pid_t spawn;
+    pid_t spawnChild = 0;
     size_t MAX = MAX_LENGTH;
+    
     char *commandLineArgs = (char *)malloc(sizeof(char) * MAX_LENGTH);
     
+    int execReturn;
+    int childExitStatus;
+    int exitMethod;
     
     
     /* Main shell loop */
@@ -32,9 +36,51 @@ int main(int argc, const char * argv[])
         
         else
         {
+            spawnChild = fork();    /* Initial fork call */
+            
+            switch (spawnChild)
+            {
+                /* An error with spawning the child process */
+                case -1:
+                    fprintf(stderr, "Child spawn failed.\n");
+                    free(commandLineArgs);
+                    exit(2);
+                    
+                /* Child process spawnChild will be 0 */
+                case 0:
+                    printf("Child spawned.\n");
+                    
+                    execReturn = execlp("ls", "ls", "test", NULL);
+                    if (execReturn == -1)
+                    {
+                        fprintf(stderr, "smallsh: %s: command not found\n", "lr");
+                        fflush(stderr);
+                    }
+                    
+                    exit(1);
+                    break;
+                
+                /* Parent process */
+                default:
+                    waitpid(spawnChild, &exitMethod, 0);  /* Block parent process until child process terminates */
+                    printf("%d\n", exitMethod);
+                    /* An exit status will be returned if the child process terminated successfully */
+                    if (WIFEXITED(exitMethod))
+                    {
+                        childExitStatus = WEXITSTATUS(exitMethod);
+                        printf("The exit status is: %d\n", childExitStatus);
+                        fflush(stdout);
+                    }
+                    
+                    /* The child status terminated via signal */
+                    else
+                    {
+                        printf("The process terminated via signal.\n");
+                        fflush(stdout);
+                    }
+            }
             
         }
-        
         
         
     } while (strcmp(commandLineArgs, EXIT) != 0);
@@ -42,29 +88,5 @@ int main(int argc, const char * argv[])
     
     
     
-    
-    
-    
-//    spawn = fork();
-//    switch (spawn)
-//    {
-//        case -1:
-//            fprintf(stderr, "Forked process failed.\n");
-//            exit(1);
-//
-//        case 0:
-//            printf("THIS IS THE CHILD PROCESS.\n");
-//            printf("CHILD PROCESS ID: %d\n", getpid());
-//            exit(0);
-//            break;
-//
-//        default:
-//            printf("THIS IS THE PARENT PROCESS.\n");
-//            printf("PARENT PROCESS ID: %d\n", getpid());
-//    }
-//
-//
-//    wait(&spawn);
-//    printf("SPAWN: %d\n", spawn);
     return 0;
 }
