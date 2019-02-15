@@ -3,6 +3,7 @@
 #include <string.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <fcntl.h>
 
 #define MAX_LENGTH      2048
 #define COMMENT         '#'
@@ -14,11 +15,15 @@ int main(int argc, const char *argv[])
     pid_t spawnChild = 0;
     size_t MAX = MAX_LENGTH;
     
+    
+    const char delimiter[3] = " \n";
+    
     char *commandLineArgs = (char *)malloc(sizeof(char) * MAX_LENGTH);
     
     int execReturn;
     int childExitStatus;
     int exitMethod;
+    int file_descriptor;
     
     
     /* Main shell loop */
@@ -50,12 +55,17 @@ int main(int argc, const char *argv[])
                 case 0:
                     printf("Child spawned.\n");
                     
-                    execReturn = execlp("ls", "ls", "test", NULL);
-                    if (execReturn == -1)
-                    {
-                        fprintf(stderr, "smallsh: %s: command not found\n", "lr");
-                        fflush(stderr);
-                    }
+                    file_descriptor = open("test", O_WRONLY | O_CREAT | O_TRUNC, 0755);
+                    
+                    /* Redirection of stdout to open file descriptor */
+                    dup2(file_descriptor, 1);
+                    execlp("ls", "ls", NULL);
+                    
+                    
+                    
+                    
+                    fprintf(stderr, "smallsh: %s: command not found\n", "lr");
+                    fflush(stderr);
                     
                     exit(1);
                     break;
@@ -63,13 +73,11 @@ int main(int argc, const char *argv[])
                 /* Parent process */
                 default:
                     waitpid(spawnChild, &exitMethod, 0);  /* Block parent process until child process terminates */
-                    printf("%d\n", exitMethod);
+                   
                     /* An exit status will be returned if the child process terminated successfully */
                     if (WIFEXITED(exitMethod))
                     {
                         childExitStatus = WEXITSTATUS(exitMethod);
-                        printf("The exit status is: %d\n", childExitStatus);
-                        fflush(stdout);
                     }
                     
                     /* The child status terminated via signal */
