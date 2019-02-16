@@ -12,6 +12,7 @@
 #define BACKGROUND_PROCESS      "&"
 #define STATUS                  "status\n"
 #define EXIT                    "exit\n"
+#define CD                      "cd "
 
 
 /****************************************************************************************/
@@ -39,7 +40,7 @@ int main(int argc, const char *argv[])
     int check_flags_set;
     int read_file_descriptor = 0;
     int write_file_descriptor = 0;
-    int i, pid, backgroundFlag = 0, readFlag = 0, writeFlag = 0, argsCount = 0;
+    int i, changeDirectory, pid, backgroundFlag = 0, readFlag = 0, writeFlag = 0, argsCount = 0;
     
     
 /****************************************************************************************/
@@ -57,14 +58,53 @@ int main(int argc, const char *argv[])
         
         getline(&commandLineArgs, &MAX, stdin);     /* User input */
         
-        /* HANDLES: Comment line, blank line, 'status', and 'exit' */
+        /* HANDLES: Comment line, blank line, 'status','exit', and 'cd' */
         if (commandLineArgs[0] == COMMENT || strlen(commandLineArgs) == 1 ||
-            strcmp(commandLineArgs, STATUS) == 0 || strcmp(commandLineArgs, EXIT) == 0)
+            strcmp(commandLineArgs, STATUS) == 0 || strcmp(commandLineArgs, EXIT) == 0 ||
+            strstr(commandLineArgs, CD))
         {
             if (strcmp(commandLineArgs, STATUS) == 0)
             {
                 printf("%s", childExitStatus);
                 fflush(stdout);
+            }
+            
+            /* Handles built-in 'cd' command. Looks for a substring of 'cd' initially and string tokenizes
+              the string ensuring the 'cd' found is standalone and not part of a word/non built-in command */
+            if (strstr(commandLineArgs, CD))
+            {
+                token = strtok_r(commandLineArgs, DELIMITER, &tokenBuffer);
+                
+                /* Looks for a standalone 'cd' command. If none is found then the while will break
+                  when token returns NULL */
+                while (token)
+                {
+                    if (!strcmp(token, "cd")) { break; }
+                    token = strtok_r(NULL, DELIMITER, &tokenBuffer);
+                }
+                
+                /* Checks to see if a valid 'cd' is found. If so, advance the string tokenizer which will
+                  now contain the path specified to change directory into. If no valid 'cd' comamnd is found
+                  from the while block this block will not execute */
+                if (token && !strcmp(token, "cd"))
+                {
+                    token = strtok_r(NULL, DELIMITER, &tokenBuffer);
+                    
+                    changeDirectory = chdir(token);
+                    if (changeDirectory < 0)
+                    {
+                        printf("No such file or directory: %s\n", token);
+                        fflush(stdout);
+                    }
+                }
+                else
+                {
+                    printf("smallsh: command not found\n");
+                    fflush(stdout);
+                }
+                
+                token = NULL;
+                tokenBuffer = NULL;
             }
         }
         
