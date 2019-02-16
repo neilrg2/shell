@@ -8,6 +8,7 @@
 #define MAX_LENGTH      2048
 #define MAX_ARGS        512
 #define COMMENT         '#'
+#define STATUS          "status\n"
 #define EXIT            "exit\n"
 
 
@@ -17,14 +18,14 @@ int main(int argc, const char *argv[])
     size_t MAX = MAX_LENGTH;
     
     
-    const char delimiter[3] = " \n";
+    const char DELIMITER[3] = " \n";
     
     char *token;
     char *tokenBuffer;
     char *args[MAX_ARGS];
     char *commandLineArgs = (char *)malloc(sizeof(char) * MAX_LENGTH);
     
-    int childExitStatus;
+    int childExitStatus = 0;
     int exitMethod;
     int read_file_descriptor = 0;
     int write_file_descriptor = 0;
@@ -43,7 +44,15 @@ int main(int argc, const char *argv[])
         getline(&commandLineArgs, &MAX, stdin);     /* User input */
         
         /* Handles comment line or blank line */
-        if (commandLineArgs[0] == COMMENT || strlen(commandLineArgs) == 1) {}
+        if (commandLineArgs[0] == COMMENT || strlen(commandLineArgs) == 1 ||
+            strcmp(commandLineArgs, STATUS) == 0)
+        {
+            if (strcmp(commandLineArgs, STATUS) == 0)
+            {
+                printf("exit value %d\n", childExitStatus);
+                fflush(stdout);
+            }
+        }
         
         else
         {
@@ -59,9 +68,9 @@ int main(int argc, const char *argv[])
                     
                 /* Child process spawnChild will be 0 */
                 case 0:
-                    printf("Child spawned.\n");
+//                    printf("Child spawned.\n");
                     
-                    token = strtok_r(commandLineArgs, delimiter, &tokenBuffer); /* Initial call to tokenizer */
+                    token = strtok_r(commandLineArgs, DELIMITER, &tokenBuffer); /* Initial call to tokenizer */
                     
                     /* Tokenize the string until there is nothing left to tokenize and store into args array */
                     while (token)
@@ -72,37 +81,39 @@ int main(int argc, const char *argv[])
                             /* Set stdin redirect to input file */
                             if ((!strcmp(token, "<")))
                             {
-                                token = strtok_r(NULL, delimiter, &tokenBuffer);
+                                token = strtok_r(NULL, DELIMITER, &tokenBuffer);
                                 
-                                args[argsCount++] = token;
                                 read_file_descriptor = open(token, O_RDONLY);
                                 if (read_file_descriptor < 0)
                                 {
                                     fprintf(stderr, "File \"%s\" could not be opened for reading.\n", token);
                                     fflush(stderr);
+                                    
+                                    free(commandLineArgs);
                                     exit(1);
                                 }
                                 
                                 readFlag = 1;
-                                token = strtok_r(NULL, delimiter, &tokenBuffer);
+                                token = strtok_r(NULL, DELIMITER, &tokenBuffer);
                             }
                             
                             /* Set stdout redirect to output file */
                             else if ((!strcmp(token, ">")))
                             {
-                                token = strtok_r(NULL, delimiter, &tokenBuffer);
+                                token = strtok_r(NULL, DELIMITER, &tokenBuffer);
                                 
-                                args[argsCount++] = token;
                                 write_file_descriptor = open(token, O_WRONLY | O_CREAT | O_TRUNC, 0755);
                                 if (write_file_descriptor < 0)
                                 {
                                     fprintf(stderr, "File \"%s\" could not be opened for writing.\n", token);
                                     fflush(stderr);
+                                    
+                                    free(commandLineArgs);
                                     exit(1);
                                 }
                                 
                                 writeFlag = 1;
-                                token = strtok_r(NULL, delimiter, &tokenBuffer);
+                                token = strtok_r(NULL, DELIMITER, &tokenBuffer);
                             }
                             
                             else
@@ -115,18 +126,11 @@ int main(int argc, const char *argv[])
                         else
                         {
                             args[argsCount++] = token;
-                            token = strtok_r(NULL, delimiter, &tokenBuffer);
+                            token = strtok_r(NULL, DELIMITER, &tokenBuffer);
                         }
                     }
-                    
-                    for (i = 0; i < argsCount; i++)
-                    {
-                        printf("%s ", args[i]);
-                    }
-                    printf("\n");
-                    fflush(stdout);
-                    
                     args[argsCount++] = NULL;   /* Set last value of array to NULL */
+
                     
                     if (readFlag)
                     {
@@ -138,12 +142,12 @@ int main(int argc, const char *argv[])
                         dup2(write_file_descriptor, 1); /* redirect of stdout */
                     }
                     
-                    
+                    free(commandLineArgs);
                     execvp(args[0], args);
                     
                     
                     /* Will execute if exec call failed */
-                    fprintf(stderr, "smallsh: %s: command not found\n", "lr");
+                    fprintf(stderr, "smallsh: %s: command not found\n", args[0]);
                     fflush(stderr);
                     
                     exit(1);
