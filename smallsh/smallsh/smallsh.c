@@ -14,6 +14,12 @@
 #define EXIT                    "exit\n"
 
 
+/****************************************************************************************/
+
+int checkFlags(int, int);
+
+/****************************************************************************************/
+
 int main(int argc, const char *argv[])
 {
     pid_t spawnChild = 0;
@@ -27,14 +33,19 @@ int main(int argc, const char *argv[])
     char *tokenBuffer;
     char *args[MAX_ARGS];
     char *commandLineArgs = (char *)malloc(sizeof(char) * MAX_LENGTH);
-    
-    int childExitStatus = 0;
+    char childExitStatus[30];
+   
     int exitMethod;
+    int check_flags_set;
     int read_file_descriptor = 0;
     int write_file_descriptor = 0;
-    int i, readFlag = 0, writeFlag = 0, argsCount = 0;
+    int i, pid, backgroundFlag = 0, readFlag = 0, writeFlag = 0, argsCount = 0;
     
     
+/****************************************************************************************/
+    
+    memset(childExitStatus, '\0', sizeof(childExitStatus));
+    strcpy(childExitStatus, "exit value 0");
     /* Main shell loop */
     do
     {
@@ -52,7 +63,7 @@ int main(int argc, const char *argv[])
         {
             if (strcmp(commandLineArgs, STATUS) == 0)
             {
-                printf("exit value %d\n", childExitStatus);
+                printf("%s", childExitStatus);
                 fflush(stdout);
             }
         }
@@ -132,6 +143,9 @@ int main(int argc, const char *argv[])
                                     {
                                         args[--argsCount] = NULL;
                                         printf("background pid is %d\n", getpid());
+                                        fflush(stdout);
+                                        
+                                        backgroundFlag = 1; /* Set background flag */
                                     }
                                 }
                             }
@@ -165,6 +179,38 @@ int main(int argc, const char *argv[])
                         dup2(write_file_descriptor, 1); /* redirect of stdout */
                     }
                     
+                    
+                    /* The process will be a background process check for any specified redirections */
+                    if (backgroundFlag)
+                    {
+                        check_flags_set = checkFlags(readFlag, writeFlag);
+                        switch (check_flags_set)
+                        {
+                            case 1:
+                                write_file_descriptor = open("/dev/null", O_WRONLY);
+                                dup2(write_file_descriptor, 1);
+                                break;
+                                
+                            case 2:
+                                read_file_descriptor = open("/dev/null", O_RDONLY);
+                                dup2(read_file_descriptor, 0);
+                                break;
+                                
+                            case 3:
+                                break;
+                                
+                            default:
+                                write_file_descriptor = open("/dev/null", O_WRONLY);
+                                read_file_descriptor = open("/dev/null", O_RDONLY);
+                                
+                                dup2(write_file_descriptor, 1);
+                                dup2(read_file_descriptor, 0);
+                        }
+                    }
+                    
+                    
+                    
+                    
                     free(commandLineArgs);
                     execvp(args[0], args);              /* EXEC call */
                     
@@ -181,7 +227,7 @@ int main(int argc, const char *argv[])
                     if (commandLineArgs[strlen(commandLineArgs) - 2] == '&')    /***********/
                     {
                         waitpid(-1, &exitMethod, WNOHANG);
-                        usleep(500);
+                        usleep(5000);
                     }
                     else
                     {
@@ -193,14 +239,15 @@ int main(int argc, const char *argv[])
                     /* An exit status will be returned if the child process terminated successfully */
                     if (WIFEXITED(exitMethod))
                     {
-                        childExitStatus = WEXITSTATUS(exitMethod);
+                        memset(childExitStatus, '\0', sizeof(childExitStatus));
+                        sprintf(childExitStatus, "exit value %d\n", WEXITSTATUS(exitMethod));
                     }
                     
                     /* The child status terminated via signal */
                     else
                     {
-                        printf("The process terminated via signal.\n");
-                        fflush(stdout);
+                        memset(childExitStatus, '\0', sizeof(childExitStatus));
+                        sprintf(childExitStatus, "terminated by signal %d\n", WTERMSIG(exitMethod));
                     }
                     
                     waitpid(-1, &exitMethod, WNOHANG);
@@ -215,4 +262,24 @@ int main(int argc, const char *argv[])
     
     
     return 0;
+}
+
+/****************************************************************************************/
+
+int checkFlags(int readFlag, int writeFlag)
+{
+    if (readFlag && writeFlag)          /* Both redirection flags were set */
+    {
+        return 3;
+    }
+    else if (!readFlag && writeFlag)    /* stdout redirection was set but not stdin */
+    {
+        return 2;
+    }
+    else if (readFlag && !writeFlag)    /* stdin redirection was set but not stdout */
+    {
+        return 1;
+    }
+    
+    return 0;                           /* Neither one of the redirection flags were set */
 }
