@@ -18,6 +18,7 @@ int main(int argc, const char *argv[])
     size_t MAX = MAX_LENGTH;
     
     
+    const int PPID = (int)getpid();
     const char DELIMITER[3] = " \n";
     
     char *token;
@@ -43,9 +44,9 @@ int main(int argc, const char *argv[])
         
         getline(&commandLineArgs, &MAX, stdin);     /* User input */
         
-        /* Handles comment line or blank line */
+        /* HANDLES: Comment line, blank line, 'status', and 'exit' */
         if (commandLineArgs[0] == COMMENT || strlen(commandLineArgs) == 1 ||
-            strcmp(commandLineArgs, STATUS) == 0)
+            strcmp(commandLineArgs, STATUS) == 0 || strcmp(commandLineArgs, EXIT) == 0)
         {
             if (strcmp(commandLineArgs, STATUS) == 0)
             {
@@ -62,13 +63,13 @@ int main(int argc, const char *argv[])
             {
                 /* An error with spawning the child process */
                 case -1:
+                    
                     fprintf(stderr, "Child spawn failed.\n");
                     free(commandLineArgs);
                     exit(2);
                     
                 /* Child process spawnChild will be 0 */
                 case 0:
-//                    printf("Child spawned.\n");
                     
                     token = strtok_r(commandLineArgs, DELIMITER, &tokenBuffer); /* Initial call to tokenizer */
                     
@@ -129,8 +130,17 @@ int main(int argc, const char *argv[])
                             token = strtok_r(NULL, DELIMITER, &tokenBuffer);
                         }
                     }
-                    args[argsCount++] = NULL;   /* Set last value of array to NULL */
-
+                    
+                    /* Handle '$$' expansion: Process ID of the shell */
+                    for (i = 0; i < argsCount; i++)
+                    {
+                        if ((!strcmp(args[i], "$$")))
+                        {
+                            sprintf(args[i], "%d", PPID);
+                        }
+                    }
+                    
+                    args[argsCount++] = NULL;           /* Set last value of array to NULL */
                     
                     if (readFlag)
                     {
@@ -143,7 +153,7 @@ int main(int argc, const char *argv[])
                     }
                     
                     free(commandLineArgs);
-                    execvp(args[0], args);
+                    execvp(args[0], args);              /* EXEC call */
                     
                     
                     /* Will execute if exec call failed */
