@@ -5,11 +5,13 @@
 #include <unistd.h>
 #include <fcntl.h>
 
-#define MAX_LENGTH      2048
-#define MAX_ARGS        512
-#define COMMENT         '#'
-#define STATUS          "status\n"
-#define EXIT            "exit\n"
+#define MAX_LENGTH              2048
+#define MAX_ARGS                512
+#define COMMENT                 '#'
+#define PID_EXPANSION           "$$"
+#define BACKGROUND_PROCESS      "&"
+#define STATUS                  "status\n"
+#define EXIT                    "exit\n"
 
 
 int main(int argc, const char *argv[])
@@ -117,13 +119,24 @@ int main(int argc, const char *argv[])
                                 token = strtok_r(NULL, DELIMITER, &tokenBuffer);
                             }
                             
+                            /* Handles background process (&) only if its the last string tokenized */
                             else
                             {
-                                
+                                if ((!strcmp(token, BACKGROUND_PROCESS)))
+                                {
+                                    args[argsCount++] = token;
+                                    token = strtok_r(NULL, DELIMITER, &tokenBuffer);
+                                    
+                                    /* Background process has been indicated remove '&' */
+                                    if (!token)
+                                    {
+                                        args[--argsCount] = NULL;
+                                        printf("background pid is %d\n", getpid());
+                                    }
+                                }
                             }
-                            
-                            
                         }
+                        
                         else
                         {
                             args[argsCount++] = token;
@@ -134,7 +147,7 @@ int main(int argc, const char *argv[])
                     /* Handle '$$' expansion: Process ID of the shell */
                     for (i = 0; i < argsCount; i++)
                     {
-                        if ((!strcmp(args[i], "$$")))
+                        if ((!strcmp(args[i], PID_EXPANSION)))
                         {
                             sprintf(args[i], "%d", PPID);
                         }
@@ -165,7 +178,17 @@ int main(int argc, const char *argv[])
                 
                 /* Parent process */
                 default:
-                    waitpid(spawnChild, &exitMethod, 0);  /* Block parent process until child process terminates */
+                    if (commandLineArgs[strlen(commandLineArgs) - 2] == '&')    /***********/
+                    {
+                        waitpid(-1, &exitMethod, WNOHANG);
+                        usleep(500);
+                    }
+                    else
+                    {
+                        waitpid(spawnChild, &exitMethod, 0);  /* Block parent process until child process terminates */
+                    }
+                    
+                    
                    
                     /* An exit status will be returned if the child process terminated successfully */
                     if (WIFEXITED(exitMethod))
@@ -179,6 +202,8 @@ int main(int argc, const char *argv[])
                         printf("The process terminated via signal.\n");
                         fflush(stdout);
                     }
+                    
+                    waitpid(-1, &exitMethod, WNOHANG);
             }
             
         }
