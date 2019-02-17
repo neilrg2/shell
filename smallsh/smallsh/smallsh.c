@@ -4,6 +4,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <signal.h>
 
 #define MAX_LENGTH              2048
 #define MAX_ARGS                512
@@ -14,10 +15,12 @@
 #define EXIT                    "exit\n"
 #define CD                      "cd "
 
+typedef struct sigaction SIGACTION;
 
 /****************************************************************************************/
 
 int checkFlags(int, int);
+void signalFunction(int);
 
 /****************************************************************************************/
 
@@ -25,6 +28,7 @@ int main(int argc, const char *argv[])
 {
     pid_t spawnChild = 0;
     size_t MAX = MAX_LENGTH;
+    SIGACTION signalAction, ignoreAction;
     
     
     const int PPID = (int)getpid();
@@ -36,6 +40,7 @@ int main(int argc, const char *argv[])
     char *commandLineArgs = (char *)malloc(sizeof(char) * MAX_LENGTH);
     char childExitStatus[30];
    
+    int wait_pid_return;
     int exitMethod;
     int check_flags_set;
     int read_file_descriptor = 0;
@@ -44,6 +49,13 @@ int main(int argc, const char *argv[])
     
     
 /****************************************************************************************/
+    
+    signalAction.sa_handler = signalFunction;
+    sigfillset(&signalAction.sa_mask);
+    signalAction.sa_flags = 0;
+    
+    ignoreAction.sa_handler = SIG_IGN;
+    
     
     memset(childExitStatus, '\0', sizeof(childExitStatus));
     strcpy(childExitStatus, "exit value 0");
@@ -111,6 +123,8 @@ int main(int argc, const char *argv[])
         else
         {
             spawnChild = fork();    /* Initial fork call */
+//            sigaction(SIGINT, &signalAction, NULL);
+            
             
             switch (spawnChild)
             {
@@ -123,6 +137,8 @@ int main(int argc, const char *argv[])
                     
                 /* Child process spawnChild will be 0 */
                 case 0:
+                    sigaction(SIGINT, &signalAction, NULL);
+                    sigaction(SIGTERM, &signalAction, NULL);
                     
                     token = strtok_r(commandLineArgs, DELIMITER, &tokenBuffer); /* Initial call to tokenizer */
                     
@@ -264,6 +280,9 @@ int main(int argc, const char *argv[])
                 
                 /* Parent process */
                 default:
+                    sigaction(SIGINT, &ignoreAction, NULL);
+                    sigaction(SIGTERM, &ignoreAction, NULL);
+                    
                     if (commandLineArgs[strlen(commandLineArgs) - 2] == '&')    /***********/
                     {
                         waitpid(-1, &exitMethod, WNOHANG);
@@ -286,11 +305,28 @@ int main(int argc, const char *argv[])
                     /* The child status terminated via signal */
                     else
                     {
-                        memset(childExitStatus, '\0', sizeof(childExitStatus));
-                        sprintf(childExitStatus, "terminated by signal %d\n", WTERMSIG(exitMethod));
+                        if (WTERMSIG(exitMethod) != 127)
+                        {
+                            memset(childExitStatus, '\0', sizeof(childExitStatus));
+                            sprintf(childExitStatus, "terminated by signal %d\n", WTERMSIG(exitMethod));
+                            printf("%s", childExitStatus);
+                            fflush(stdout);
+                        }
                     }
                     
-                    waitpid(-1, &exitMethod, WNOHANG);
+                    wait_pid_return = waitpid(-1, &exitMethod, WNOHANG);
+                    if (wait_pid_return != -1 && wait_pid_return != 0)
+                    {
+                        if (WIFEXITED(exitMethod))
+                        {
+                            printf("background pid %d is done: exit value %d\n", wait_pid_return, WEXITSTATUS(exitMethod));
+                        }
+                        else
+                        {
+                            printf("background pid %d is done: terminated by signal %d\n", wait_pid_return, WTERMSIG(exitMethod));
+                        }
+    
+                    }
             }
             
         }
@@ -322,4 +358,9 @@ int checkFlags(int readFlag, int writeFlag)
     }
     
     return 0;                           /* Neither one of the redirection flags were set */
+}
+
+void signalFunction(int signal)
+{
+    
 }
