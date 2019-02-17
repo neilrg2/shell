@@ -13,7 +13,7 @@
 #define BACKGROUND_PROCESS      "&"
 #define STATUS                  "status\n"
 #define EXIT                    "exit\n"
-#define CD                      "cd "
+#define CD                      "cd"
 
 typedef struct sigaction SIGACTION;
 
@@ -102,7 +102,8 @@ int main(int argc, const char *argv[])
                 {
                     token = strtok_r(NULL, DELIMITER, &tokenBuffer);
                     
-                    changeDirectory = chdir(token);
+                    changeDirectory = (token) ? chdir(token) : chdir(getenv("HOME"));
+                    printf("%s\n", getenv("HOME"));
                     if (changeDirectory < 0)
                     {
                         printf("No such file or directory: %s\n", token);
@@ -314,19 +315,33 @@ int main(int argc, const char *argv[])
                         }
                     }
                     
-                    wait_pid_return = waitpid(-1, &exitMethod, WNOHANG);
-                    if (wait_pid_return != -1 && wait_pid_return != 0)
-                    {
-                        if (WIFEXITED(exitMethod))
-                        {
-                            printf("background pid %d is done: exit value %d\n", wait_pid_return, WEXITSTATUS(exitMethod));
-                        }
-                        else
-                        {
-                            printf("background pid %d is done: terminated by signal %d\n", wait_pid_return, WTERMSIG(exitMethod));
-                        }
-    
-                    }
+//                    wait_pid_return = waitpid(-1, &exitMethod, WNOHANG);
+//                    if (wait_pid_return != -1 && wait_pid_return != 0)
+//                    {
+//                        if (WIFEXITED(exitMethod))
+//                        {
+//                            printf("background pid %d is done: exit value %d\n", wait_pid_return, WEXITSTATUS(exitMethod));
+//                        }
+//                        else
+//                        {
+//                            printf("background pid %d is done: terminated by signal %d\n", wait_pid_return, WTERMSIG(exitMethod));
+//                        }
+//
+//                    }
+            }
+            
+        }
+        
+        wait_pid_return = waitpid(-1, &exitMethod, WNOHANG);
+        if (wait_pid_return != -1 && wait_pid_return != 0)
+        {
+            if (WIFEXITED(exitMethod))
+            {
+                printf("background pid %d is done: exit value %d\n", wait_pid_return, WEXITSTATUS(exitMethod));
+            }
+            else
+            {
+                printf("background pid %d is done: terminated by signal %d\n", wait_pid_return, WTERMSIG(exitMethod));
             }
             
         }
