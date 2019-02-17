@@ -43,6 +43,7 @@ int main(int argc, const char *argv[])
     int wait_pid_return;
     int exitMethod;
     int check_flags_set;
+    int toggle_mode = 1;
     int read_file_descriptor = 0;
     int write_file_descriptor = 0;
     int i, changeDirectory, pid, backgroundFlag = 0, readFlag = 0, writeFlag = 0, argsCount = 0;
@@ -56,9 +57,14 @@ int main(int argc, const char *argv[])
     
     ignoreAction.sa_handler = SIG_IGN;
     
+    sigaction(SIGINT, &ignoreAction, NULL);
+    sigaction(SIGTSTP, &signalAction, NULL);
     
     memset(childExitStatus, '\0', sizeof(childExitStatus));
     strcpy(childExitStatus, "exit value 0");
+    
+/****************************************************************************************/
+    
     /* Main shell loop */
     do
     {
@@ -103,7 +109,7 @@ int main(int argc, const char *argv[])
                     token = strtok_r(NULL, DELIMITER, &tokenBuffer);
                     
                     changeDirectory = (token) ? chdir(token) : chdir(getenv("HOME"));
-                    printf("%s\n", getenv("HOME"));
+                   
                     if (changeDirectory < 0)
                     {
                         printf("No such file or directory: %s\n", token);
@@ -140,6 +146,7 @@ int main(int argc, const char *argv[])
                 case 0:
                     sigaction(SIGINT, &signalAction, NULL);
                     sigaction(SIGTERM, &signalAction, NULL);
+                    sigaction(SIGTSTP, &ignoreAction, NULL);
                     
                     token = strtok_r(commandLineArgs, DELIMITER, &tokenBuffer); /* Initial call to tokenizer */
                     
@@ -240,6 +247,8 @@ int main(int argc, const char *argv[])
                     /* The process will be a background process check for any specified redirections */
                     if (backgroundFlag)
                     {
+                        sigaction(SIGINT, &ignoreAction, NULL);
+                        
                         check_flags_set = checkFlags(readFlag, writeFlag);
                         switch (check_flags_set)
                         {
@@ -286,34 +295,78 @@ int main(int argc, const char *argv[])
                     
                     if (commandLineArgs[strlen(commandLineArgs) - 2] == '&')    /***********/
                     {
-                        waitpid(-1, &exitMethod, WNOHANG);
+                        wait_pid_return = waitpid(-1, &exitMethod, WNOHANG);
+                        if (wait_pid_return != -1 && wait_pid_return != 0)
+                        {
+                            if (WIFEXITED(exitMethod))
+                            {
+                                printf("background pid %d is done: exit value %d\n", wait_pid_return, WEXITSTATUS(exitMethod));
+                            }
+                            else
+                            {
+                                printf("background pid %d is done: terminated by signal %d\n", wait_pid_return, WTERMSIG(exitMethod));
+                            }
+                            
+                        }
                         usleep(5000);
                     }
                     else
                     {
                         waitpid(spawnChild, &exitMethod, 0);  /* Block parent process until child process terminates */
+                        
+                        /* An exit status will be returned if the child process terminated successfully */
+                        if (WIFEXITED(exitMethod))
+                        {
+                            memset(childExitStatus, '\0', sizeof(childExitStatus));
+                            sprintf(childExitStatus, "exit value %d\n", WEXITSTATUS(exitMethod));
+                        }
+                        
+                        /* The child status terminated via signal */
+                        else
+                        {
+                            if (WTERMSIG(exitMethod) != 127 && WTERMSIG(exitMethod) != 11)
+                            {
+                                memset(childExitStatus, '\0', sizeof(childExitStatus));
+                                sprintf(childExitStatus, "terminated by signal %d\n", WTERMSIG(exitMethod));
+                                printf("%s", childExitStatus);
+                                fflush(stdout);
+                            }
+                            else if (WTERMSIG(exitMethod) == 11 || WTERMSIG(exitMethod) == SIGTSTP)
+                            {
+                                if (toggle_mode)
+                                {
+                                    printf("\nEntering foreground-only mode (& is now ignored)\n");
+                                    toggle_mode = 0;
+                                }
+                                else
+                                {
+                                    printf("\nExiting foreground-only mode\n");
+                                    toggle_mode = 1;
+                                }
+                            }
+                        }
                     }
                     
                     
                    
-                    /* An exit status will be returned if the child process terminated successfully */
-                    if (WIFEXITED(exitMethod))
-                    {
-                        memset(childExitStatus, '\0', sizeof(childExitStatus));
-                        sprintf(childExitStatus, "exit value %d\n", WEXITSTATUS(exitMethod));
-                    }
-                    
-                    /* The child status terminated via signal */
-                    else
-                    {
-                        if (WTERMSIG(exitMethod) != 127)
-                        {
-                            memset(childExitStatus, '\0', sizeof(childExitStatus));
-                            sprintf(childExitStatus, "terminated by signal %d\n", WTERMSIG(exitMethod));
-                            printf("%s", childExitStatus);
-                            fflush(stdout);
-                        }
-                    }
+//                    /* An exit status will be returned if the child process terminated successfully */
+//                    if (WIFEXITED(exitMethod))
+//                    {
+//                        memset(childExitStatus, '\0', sizeof(childExitStatus));
+//                        sprintf(childExitStatus, "exit value %d\n", WEXITSTATUS(exitMethod));
+//                    }
+//
+//                    /* The child status terminated via signal */
+//                    else
+//                    {
+//                        if (WTERMSIG(exitMethod) != 127)
+//                        {
+//                            memset(childExitStatus, '\0', sizeof(childExitStatus));
+//                            sprintf(childExitStatus, "terminated by signal %d\n", WTERMSIG(exitMethod));
+//                            printf("%s", childExitStatus);
+//                            fflush(stdout);
+//                        }
+//                    }
                     
 //                    wait_pid_return = waitpid(-1, &exitMethod, WNOHANG);
 //                    if (wait_pid_return != -1 && wait_pid_return != 0)
@@ -332,19 +385,35 @@ int main(int argc, const char *argv[])
             
         }
         
-        wait_pid_return = waitpid(-1, &exitMethod, WNOHANG);
-        if (wait_pid_return != -1 && wait_pid_return != 0)
+        for (i = 0; i < 5; i++)
         {
-            if (WIFEXITED(exitMethod))
+            wait_pid_return = waitpid(-1, &exitMethod, WNOHANG);
+            if (wait_pid_return != -1 && wait_pid_return != 0)
             {
-                printf("background pid %d is done: exit value %d\n", wait_pid_return, WEXITSTATUS(exitMethod));
+                if (WIFEXITED(exitMethod))
+                {
+                    printf("background pid %d is done: exit value %d\n", wait_pid_return, WEXITSTATUS(exitMethod));
+                }
+                else
+                {
+                    printf("background pid %d is done: terminated by signal %d\n", wait_pid_return, WTERMSIG(exitMethod));
+                }
+                
             }
-            else
-            {
-                printf("background pid %d is done: terminated by signal %d\n", wait_pid_return, WTERMSIG(exitMethod));
-            }
-            
         }
+//        wait_pid_return = waitpid(-1, &exitMethod, WNOHANG);
+//        if (wait_pid_return != -1 && wait_pid_return != 0)
+//        {
+//            if (WIFEXITED(exitMethod))
+//            {
+//                printf("background pid %d is done: exit value %d\n", wait_pid_return, WEXITSTATUS(exitMethod));
+//            }
+//            else
+//            {
+//                printf("background pid %d is done: terminated by signal %d\n", wait_pid_return, WTERMSIG(exitMethod));
+//            }
+//
+//        }
         
         
     } while (strcmp(commandLineArgs, EXIT) != 0);
