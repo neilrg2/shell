@@ -61,7 +61,7 @@ int main(int argc, const char *argv[])
     sigaction(SIGTSTP, &signalAction, NULL);
     
     memset(childExitStatus, '\0', sizeof(childExitStatus));
-    strcpy(childExitStatus, "exit value 0");
+    strcpy(childExitStatus, "exit value 0\n");
     
 /****************************************************************************************/
     
@@ -78,13 +78,20 @@ int main(int argc, const char *argv[])
         
         /* HANDLES: Comment line, blank line, 'status','exit', and 'cd' */
         if (commandLineArgs[0] == COMMENT || strlen(commandLineArgs) == 1 ||
-            strcmp(commandLineArgs, STATUS) == 0 || strcmp(commandLineArgs, EXIT) == 0 ||
+            strstr(commandLineArgs, "status") || strcmp(commandLineArgs, EXIT) == 0 ||
             strstr(commandLineArgs, CD))
         {
-            if (strcmp(commandLineArgs, STATUS) == 0)
+            if (strstr(commandLineArgs, "status"))
             {
-                printf("%s", childExitStatus);
-                fflush(stdout);
+                token = strtok_r(commandLineArgs, DELIMITER, &tokenBuffer);
+                
+                if (!strcmp(token, "status"))
+                {
+                    printf("%s", childExitStatus);
+                    fflush(stdout);
+                    
+                    usleep(5000);
+                }
             }
             
             /* Handles built-in 'cd' command. Looks for a substring of 'cd' initially and string tokenizes
@@ -197,7 +204,7 @@ int main(int argc, const char *argv[])
                             /* Handles background process (&) only if its the last string tokenized */
                             else
                             {
-                                if ((!strcmp(token, BACKGROUND_PROCESS)))
+                                if ((!strcmp(token, BACKGROUND_PROCESS)) && toggle_mode)
                                 {
                                     args[argsCount++] = token;
                                     token = strtok_r(NULL, DELIMITER, &tokenBuffer);
@@ -211,6 +218,11 @@ int main(int argc, const char *argv[])
                                         
                                         backgroundFlag = 1; /* Set background flag */
                                     }
+                                }
+                                
+                                if (!toggle_mode)
+                                {
+                                    token = strtok_r(NULL, DELIMITER, &tokenBuffer);
                                 }
                             }
                         }
@@ -293,7 +305,7 @@ int main(int argc, const char *argv[])
                     sigaction(SIGINT, &ignoreAction, NULL);
                     sigaction(SIGTERM, &ignoreAction, NULL);
                     
-                    if (commandLineArgs[strlen(commandLineArgs) - 2] == '&')    /***********/
+                    if (commandLineArgs[strlen(commandLineArgs) - 2] == '&' && toggle_mode)    /***********/
                     {
                         wait_pid_return = waitpid(-1, &exitMethod, WNOHANG);
                         if (wait_pid_return != -1 && wait_pid_return != 0)
