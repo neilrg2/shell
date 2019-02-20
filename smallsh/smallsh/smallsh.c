@@ -19,8 +19,11 @@ typedef struct sigaction SIGACTION;
 
 /****************************************************************************************/
 
+static int toggle_handler = -1;
+
 int checkFlags(int, int);
 void signalFunction(int);
+void toggleFunction(int);
 
 /****************************************************************************************/
 
@@ -28,8 +31,7 @@ int main(int argc, const char *argv[])
 {
     pid_t spawnChild = 0;
     size_t MAX = MAX_LENGTH;
-    SIGACTION signalAction, ignoreAction;
-    
+    SIGACTION signalAction, ignoreAction, toggleAction;
     
     const int PPID = (int)getpid();
     const char DELIMITER[3] = " \n";
@@ -51,17 +53,21 @@ int main(int argc, const char *argv[])
     
 /****************************************************************************************/
     
-    signalAction.sa_handler = signalFunction;
-    sigfillset(&signalAction.sa_mask);
+    signalAction.sa_handler = signalFunction;                   /* Assign signal handler */
+    sigfillset(&signalAction.sa_mask);                           /* Block/Delay all signals */
     signalAction.sa_flags = 0;
     
-    ignoreAction.sa_handler = SIG_IGN;
+    ignoreAction.sa_handler = SIG_IGN;                          /* sig action for ignoring */
     
-    sigaction(SIGINT, &ignoreAction, NULL);
-    sigaction(SIGTSTP, &signalAction, NULL);
+    toggleAction.sa_handler = toggleFunction;
+    sigfillset(&toggleAction.sa_mask);
+    toggleAction.sa_flags = 0;
+    
+    sigaction(SIGINT, &ignoreAction, NULL);                     /* SIGINT signals will be ignored for the parent */
+    sigaction(SIGTSTP, &toggleAction, NULL);                    /* SIGTSTP signals will be handled in the parent */
     
     memset(childExitStatus, '\0', sizeof(childExitStatus));
-    strcpy(childExitStatus, "exit value 0\n");
+    strcpy(childExitStatus, "exit value 0\n");                  /* Initial 'status' set to 0 */
     
 /****************************************************************************************/
     
@@ -71,7 +77,7 @@ int main(int argc, const char *argv[])
         memset(commandLineArgs, '\0', MAX_LENGTH);
 
         
-        printf(": ");
+        printf(": ");       /* Prompt line */
         fflush(stdout);     /* Flush stdout after output */
         
         getline(&commandLineArgs, &MAX, stdin);     /* User input */
@@ -81,6 +87,11 @@ int main(int argc, const char *argv[])
             strstr(commandLineArgs, "status") || strcmp(commandLineArgs, EXIT) == 0 ||
             strstr(commandLineArgs, CD))
         {
+            
+            /* Checks string 'status' against entered string; If located the user input
+             is tokenized and checked to see if the first string token is exactly 'status';
+             If true, then print exit value/signal termination of last foreground process.
+             Else, treat user input as non-builtin command */
             if (strstr(commandLineArgs, "status"))
             {
                 token = strtok_r(commandLineArgs, DELIMITER, &tokenBuffer);
@@ -313,10 +324,12 @@ int main(int argc, const char *argv[])
                             if (WIFEXITED(exitMethod))
                             {
                                 printf("background pid %d is done: exit value %d\n", wait_pid_return, WEXITSTATUS(exitMethod));
+                                fflush(stdout);
                             }
                             else
                             {
                                 printf("background pid %d is done: terminated by signal %d\n", wait_pid_return, WTERMSIG(exitMethod));
+                                fflush(stdout);
                             }
                             
                         }
@@ -326,11 +339,30 @@ int main(int argc, const char *argv[])
                     {
                         waitpid(spawnChild, &exitMethod, 0);  /* Block parent process until child process terminates */
                         
+                        waitpid(spawnChild, &exitMethod, 0);
                         /* An exit status will be returned if the child process terminated successfully */
                         if (WIFEXITED(exitMethod))
                         {
                             memset(childExitStatus, '\0', sizeof(childExitStatus));
                             sprintf(childExitStatus, "exit value %d\n", WEXITSTATUS(exitMethod));
+                            
+                           if (toggle_handler == 5)
+                           {
+                               if (toggle_mode)
+                               {
+                                   printf("\nEntering foreground-only mode (& is now ignored)\n");
+                                   fflush(stdout);
+                                   toggle_mode = 0;
+                               }
+                               else
+                               {
+                                   printf("\nExiting foreground-only mode\n");
+                                   fflush(stdout);
+                                   toggle_mode = 1;
+                               }
+                               
+                            
+                           }
                         }
                         
                         /* The child status terminated via signal */
@@ -348,11 +380,13 @@ int main(int argc, const char *argv[])
                                 if (toggle_mode)
                                 {
                                     printf("\nEntering foreground-only mode (& is now ignored)\n");
+                                    fflush(stdout);
                                     toggle_mode = 0;
                                 }
                                 else
                                 {
                                     printf("\nExiting foreground-only mode\n");
+                                    fflush(stdout);
                                     toggle_mode = 1;
                                 }
                             }
@@ -405,10 +439,12 @@ int main(int argc, const char *argv[])
                 if (WIFEXITED(exitMethod))
                 {
                     printf("background pid %d is done: exit value %d\n", wait_pid_return, WEXITSTATUS(exitMethod));
+                    fflush(stdout);
                 }
                 else
                 {
                     printf("background pid %d is done: terminated by signal %d\n", wait_pid_return, WTERMSIG(exitMethod));
+                    fflush(stdout);
                 }
                 
             }
@@ -427,7 +463,7 @@ int main(int argc, const char *argv[])
 //
 //        }
         
-        
+        toggle_handler = -1;
     } while (strcmp(commandLineArgs, EXIT) != 0);
     free(commandLineArgs);
     
@@ -459,4 +495,9 @@ int checkFlags(int readFlag, int writeFlag)
 void signalFunction(int signal)
 {
     
+}
+
+void toggleFunction(int signal)
+{
+    toggle_handler = 5;
 }
