@@ -30,6 +30,7 @@ void toggleFunction(int);
 int main(int argc, const char *argv[])
 {
     pid_t spawnChild = 0;
+    pid_t waitReturn;
     size_t MAX = MAX_LENGTH;
     SIGACTION signalAction, ignoreAction, toggleAction;
     
@@ -338,31 +339,13 @@ int main(int argc, const char *argv[])
                     else
                     {
                         waitpid(spawnChild, &exitMethod, 0);  /* Block parent process until child process terminates */
-                        
                         waitpid(spawnChild, &exitMethod, 0);
+                        
                         /* An exit status will be returned if the child process terminated successfully */
                         if (WIFEXITED(exitMethod))
                         {
                             memset(childExitStatus, '\0', sizeof(childExitStatus));
                             sprintf(childExitStatus, "exit value %d\n", WEXITSTATUS(exitMethod));
-                            
-                           if (toggle_handler == 5)
-                           {
-                               if (toggle_mode)
-                               {
-                                   printf("\nEntering foreground-only mode (& is now ignored)\n");
-                                   fflush(stdout);
-                                   toggle_mode = 0;
-                               }
-                               else
-                               {
-                                   printf("\nExiting foreground-only mode\n");
-                                   fflush(stdout);
-                                   toggle_mode = 1;
-                               }
-                               
-                            
-                           }
                         }
                         
                         /* The child status terminated via signal */
@@ -370,65 +353,34 @@ int main(int argc, const char *argv[])
                         {
                             if (WTERMSIG(exitMethod) != 127 && WTERMSIG(exitMethod) != 11)
                             {
+                                if (WTERMSIG(exitMethod) == 0) {}
+                                
                                 memset(childExitStatus, '\0', sizeof(childExitStatus));
                                 sprintf(childExitStatus, "terminated by signal %d\n", WTERMSIG(exitMethod));
                                 printf("%s", childExitStatus);
                                 fflush(stdout);
                             }
-                            else if (WTERMSIG(exitMethod) == 11 || WTERMSIG(exitMethod) == SIGTSTP)
-                            {
-                                if (toggle_mode)
-                                {
-                                    printf("\nEntering foreground-only mode (& is now ignored)\n");
-                                    fflush(stdout);
-                                    toggle_mode = 0;
-                                }
-                                else
-                                {
-                                    printf("\nExiting foreground-only mode\n");
-                                    fflush(stdout);
-                                    toggle_mode = 1;
-                                }
-                            }
                         }
                     }
                     
-                    
-                   
-//                    /* An exit status will be returned if the child process terminated successfully */
-//                    if (WIFEXITED(exitMethod))
-//                    {
-//                        memset(childExitStatus, '\0', sizeof(childExitStatus));
-//                        sprintf(childExitStatus, "exit value %d\n", WEXITSTATUS(exitMethod));
-//                    }
-//
-//                    /* The child status terminated via signal */
-//                    else
-//                    {
-//                        if (WTERMSIG(exitMethod) != 127)
-//                        {
-//                            memset(childExitStatus, '\0', sizeof(childExitStatus));
-//                            sprintf(childExitStatus, "terminated by signal %d\n", WTERMSIG(exitMethod));
-//                            printf("%s", childExitStatus);
-//                            fflush(stdout);
-//                        }
-//                    }
-                    
-//                    wait_pid_return = waitpid(-1, &exitMethod, WNOHANG);
-//                    if (wait_pid_return != -1 && wait_pid_return != 0)
-//                    {
-//                        if (WIFEXITED(exitMethod))
-//                        {
-//                            printf("background pid %d is done: exit value %d\n", wait_pid_return, WEXITSTATUS(exitMethod));
-//                        }
-//                        else
-//                        {
-//                            printf("background pid %d is done: terminated by signal %d\n", wait_pid_return, WTERMSIG(exitMethod));
-//                        }
-//
-//                    }
             }
             
+        }
+        
+        if (toggle_handler == 5)
+        {
+            if (toggle_mode)
+            {
+                printf("\nEntering foreground-only mode (& is now ignored)\n");
+                fflush(stdout);
+                toggle_mode = 0;
+            }
+            else
+            {
+                printf("\nExiting foreground-only mode\n");
+                fflush(stdout);
+                toggle_mode = 1;
+            }
         }
         
         for (i = 0; i < 5; i++)
@@ -449,19 +401,6 @@ int main(int argc, const char *argv[])
                 
             }
         }
-//        wait_pid_return = waitpid(-1, &exitMethod, WNOHANG);
-//        if (wait_pid_return != -1 && wait_pid_return != 0)
-//        {
-//            if (WIFEXITED(exitMethod))
-//            {
-//                printf("background pid %d is done: exit value %d\n", wait_pid_return, WEXITSTATUS(exitMethod));
-//            }
-//            else
-//            {
-//                printf("background pid %d is done: terminated by signal %d\n", wait_pid_return, WTERMSIG(exitMethod));
-//            }
-//
-//        }
         
         toggle_handler = -1;
     } while (strcmp(commandLineArgs, EXIT) != 0);
