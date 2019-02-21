@@ -43,6 +43,8 @@ int main(int argc, const char *argv[])
     char *commandLineArgs = (char *)malloc(sizeof(char) * MAX_LENGTH);
     char childExitStatus[30];
    
+    int c;
+    int count = 0;
     int wait_pid_return;
     int exitMethod;
     int check_flags_set;
@@ -81,7 +83,19 @@ int main(int argc, const char *argv[])
         printf(": ");       /* Prompt line */
         fflush(stdout);     /* Flush stdout after output */
         
-        getline(&commandLineArgs, &MAX, stdin);     /* User input */
+//        getline(&commandLineArgs, &MAX, stdin);     /* User input */
+        
+        while (1)
+        {
+            c = getchar();
+            if (c == EOF) { break; }
+            if (c == '\n')
+            {
+                commandLineArgs[count++] = c;
+                break;
+            }
+            commandLineArgs[count++] = c;
+        }
         
         /* HANDLES: Comment line, blank line, 'status','exit', and 'cd' */
         if (commandLineArgs[0] == COMMENT || strlen(commandLineArgs) == 1 ||
@@ -403,6 +417,7 @@ int main(int argc, const char *argv[])
         }
         
         toggle_handler = -1;
+        count = 0;
     } while (strcmp(commandLineArgs, EXIT) != 0);
     free(commandLineArgs);
     
