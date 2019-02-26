@@ -30,8 +30,6 @@ void toggleFunction(int);
 int main(int argc, const char *argv[])
 {
     pid_t spawnChild = 0;
-    pid_t waitReturn;
-    size_t MAX = MAX_LENGTH;
     SIGACTION signalAction, ignoreAction, toggleAction;
     
     const int PPID = (int)getpid();
@@ -42,8 +40,11 @@ int main(int argc, const char *argv[])
     char *args[MAX_ARGS];
     char *commandLineArgs = (char *)malloc(sizeof(char) * MAX_LENGTH);
     char childExitStatus[30];
+    char pid_expansion[128];
+    char pid_expansion_arg[128];
+    char pid_expansion_temp[20];
    
-    int c;
+    int commandLineChar;
     int count = 0;
     int wait_pid_return;
     int exitMethod;
@@ -51,7 +52,7 @@ int main(int argc, const char *argv[])
     int toggle_mode = 1;
     int read_file_descriptor = 0;
     int write_file_descriptor = 0;
-    int i, changeDirectory, pid, backgroundFlag = 0, readFlag = 0, writeFlag = 0, argsCount = 0;
+    int i, j, changeDirectory, backgroundFlag = 0, readFlag = 0, writeFlag = 0, argsCount = 0;
     
     
 /****************************************************************************************/
@@ -79,28 +80,32 @@ int main(int argc, const char *argv[])
     {
         memset(commandLineArgs, '\0', MAX_LENGTH);
 
-        
         printf(": ");       /* Prompt line */
         fflush(stdout);     /* Flush stdout after output */
         
-//        getline(&commandLineArgs, &MAX, stdin);     /* User input */
         
+        /* User input is read from character by character from stdin and extracted via
+          getchar calls. When the end of file or a new line is encountered the loop will
+          break and that indicates there is nothing else left to read from stdin. Each
+          character is added to our string that will later be passed to exec if command
+          is not one of the built-in commands. */
         while (1)
         {
-            c = getchar();
-            if (c == EOF) { break; }
-            if (c == '\n')
+            commandLineChar = getchar();
+            if (commandLineChar == EOF) { break; }
+            if (commandLineChar == '\n')
             {
-                commandLineArgs[count++] = c;
+                commandLineArgs[count++] = commandLineChar;
                 break;
             }
-            commandLineArgs[count++] = c;
+            commandLineArgs[count++] = commandLineChar;
         }
         
+
         /* HANDLES: Comment line, blank line, 'status','exit', and 'cd' */
-        if (commandLineArgs[0] == COMMENT || strlen(commandLineArgs) == 1 ||
+        if ((commandLineArgs[0] == COMMENT || strlen(commandLineArgs) == 1 ||
             strstr(commandLineArgs, "status") || strcmp(commandLineArgs, EXIT) == 0 ||
-            strstr(commandLineArgs, CD))
+            strstr(commandLineArgs, CD)) && !strstr(commandLineArgs, "echo"))
         {
             
             /* Checks string 'status' against entered string; If located the user input
@@ -126,13 +131,6 @@ int main(int argc, const char *argv[])
             {
                 token = strtok_r(commandLineArgs, DELIMITER, &tokenBuffer);
                 
-                /* Looks for a standalone 'cd' command. If none is found then the while will break
-                  when token returns NULL */
-                while (token)
-                {
-                    if (!strcmp(token, "cd")) { break; }
-                    token = strtok_r(NULL, DELIMITER, &tokenBuffer);
-                }
                 
                 /* Checks to see if a valid 'cd' is found. If so, advance the string tokenizer which will
                   now contain the path specified to change directory into. If no valid 'cd' comamnd is found
@@ -141,8 +139,39 @@ int main(int argc, const char *argv[])
                 {
                     token = strtok_r(NULL, DELIMITER, &tokenBuffer);
                     
+                    /* Handling pid expansion if there is a $$ */
+                    if (token && strstr(token, PID_EXPANSION))
+                    {
+                        memset(pid_expansion_arg, '\0', 128);
+                        memset(pid_expansion, '\0', 128);
+                        strcpy(pid_expansion, token);
+                        
+                        for (j = 0; j < strlen(pid_expansion); j++)
+                        {
+                            if (pid_expansion[j] == '$' && pid_expansion[j + 1] == '$')
+                            {
+                                sprintf(pid_expansion_temp, "%d", PPID);
+                                strcat(pid_expansion_arg, pid_expansion_temp);
+                                
+                                j++;
+                            }
+                            else
+                            {
+                                sprintf(pid_expansion_temp, "%c", pid_expansion[j]);
+                                strcat(pid_expansion_arg, pid_expansion_temp);
+                            }
+                        }
+                        
+                        strcpy(token, pid_expansion_arg);
+                    }
+                    
+                    /* If token is not NULL, chdir will be called on the value of token.
+                     Else, 'cd' was not passed with a subsequent path indicating a chdir
+                     to the home directory */
                     changeDirectory = (token) ? chdir(token) : chdir(getenv("HOME"));
                    
+                    
+                    /* File failed to open */
                     if (changeDirectory < 0)
                     {
                         printf("No such file or directory: %s\n", token);
@@ -158,13 +187,13 @@ int main(int argc, const char *argv[])
                 token = NULL;
                 tokenBuffer = NULL;
             }
+            
+            usleep(5000);
         }
         
         else
         {
             spawnChild = fork();    /* Initial fork call */
-//            sigaction(SIGINT, &signalAction, NULL);
-            
             
             switch (spawnChild)
             {
@@ -177,6 +206,8 @@ int main(int argc, const char *argv[])
                     
                 /* Child process spawnChild will be 0 */
                 case 0:
+                    
+                    /* Signal handlers for child process */
                     sigaction(SIGINT, &signalAction, NULL);
                     sigaction(SIGTERM, &signalAction, NULL);
                     sigaction(SIGTSTP, &ignoreAction, NULL);
@@ -204,7 +235,7 @@ int main(int argc, const char *argv[])
                                     exit(1);
                                 }
                                 
-                                readFlag = 1;
+                                readFlag = 1;   /* Read flag gets set indicating a redirection of stdin */
                                 token = strtok_r(NULL, DELIMITER, &tokenBuffer);
                             }
                             
@@ -223,17 +254,24 @@ int main(int argc, const char *argv[])
                                     exit(1);
                                 }
                                 
-                                writeFlag = 1;
+                                writeFlag = 1;  /* Write flag gets set indicating a redirection of stdout */
                                 token = strtok_r(NULL, DELIMITER, &tokenBuffer);
                             }
                             
                             /* Handles background process (&) only if its the last string tokenized */
                             else
                             {
+                                /* If the token is equal to '&' and foreground only mode is disabled */
                                 if ((!strcmp(token, BACKGROUND_PROCESS)) && toggle_mode)
                                 {
                                     args[argsCount++] = token;
+                                    
+                                    
+                                    /* this call to token ensures there is nothing else after '&' was encountered.
+                                    If '&' is not the last token, then this will not be treated as a background
+                                    process. */
                                     token = strtok_r(NULL, DELIMITER, &tokenBuffer);
+                                    
                                     
                                     /* Background process has been indicated remove '&' */
                                     if (!token)
@@ -246,6 +284,8 @@ int main(int argc, const char *argv[])
                                     }
                                 }
                                 
+                                
+                                /* Simply ignore the '&' if foreground mode is on */
                                 if (!toggle_mode)
                                 {
                                     token = strtok_r(NULL, DELIMITER, &tokenBuffer);
@@ -253,6 +293,7 @@ int main(int argc, const char *argv[])
                             }
                         }
                         
+                        /* Add to string and advance token as normal if '<', '>', or '&' are not encountered */
                         else
                         {
                             args[argsCount++] = token;
@@ -260,12 +301,39 @@ int main(int argc, const char *argv[])
                         }
                     }
                     
+                    
                     /* Handle '$$' expansion: Process ID of the shell */
+                    memset(pid_expansion_arg, '\0', 128);
                     for (i = 0; i < argsCount; i++)
                     {
-                        if ((!strcmp(args[i], PID_EXPANSION)))
+                        
+                        /* The string contained $$ somewhere within it */
+                        if (strstr(args[i], PID_EXPANSION))
                         {
-                            sprintf(args[i], "%d", PPID);
+                            memset(pid_expansion, '\0', 128);
+                            strcpy(pid_expansion, args[i]);
+                            
+                            for (j = 0; j < strlen(pid_expansion); j++)
+                            {
+                                
+                                /* Shell PID (parent PID) is appended string if $$ is found */
+                                if (pid_expansion[j] == '$' && pid_expansion[j + 1] == '$')
+                                {
+                                    sprintf(pid_expansion_temp, "%d", PPID);
+                                    strcat(pid_expansion_arg, pid_expansion_temp);
+                                    
+                                    j++;
+                                }
+                                
+                                /* Append the character as normal */
+                                else
+                                {
+                                    sprintf(pid_expansion_temp, "%c", pid_expansion[j]);
+                                    strcat(pid_expansion_arg, pid_expansion_temp);
+                                }
+                            }
+                            
+                            strcpy(args[i], pid_expansion_arg);     /* Copy back to argument list the newly formatted string */
                         }
                     }
                     
@@ -285,24 +353,29 @@ int main(int argc, const char *argv[])
                     /* The process will be a background process check for any specified redirections */
                     if (backgroundFlag)
                     {
-                        sigaction(SIGINT, &ignoreAction, NULL);
+                        sigaction(SIGINT, &ignoreAction, NULL); /* Background process cant be terminated by SIGINT */
                         
                         check_flags_set = checkFlags(readFlag, writeFlag);
                         switch (check_flags_set)
                         {
+                                
+                            /* Write descriptor was not set with user input */
                             case 1:
                                 write_file_descriptor = open("/dev/null", O_WRONLY);
                                 dup2(write_file_descriptor, 1);
                                 break;
                                 
+                            /* Read descriptor was not set with user input */
                             case 2:
                                 read_file_descriptor = open("/dev/null", O_RDONLY);
                                 dup2(read_file_descriptor, 0);
                                 break;
                                 
+                            /* Both read and write descriptors were set by user input */
                             case 3:
                                 break;
                                 
+                            /* Neither descriptor was set by user input */
                             default:
                                 write_file_descriptor = open("/dev/null", O_WRONLY);
                                 read_file_descriptor = open("/dev/null", O_RDONLY);
@@ -311,9 +384,6 @@ int main(int argc, const char *argv[])
                                 dup2(read_file_descriptor, 0);
                         }
                     }
-                    
-                    
-                    
                     
                     free(commandLineArgs);
                     execvp(args[0], args);              /* EXEC call */
@@ -328,9 +398,14 @@ int main(int argc, const char *argv[])
                 
                 /* Parent process */
                 default:
+                    
+                    /* Signals handled for parent process */
                     sigaction(SIGINT, &ignoreAction, NULL);
                     sigaction(SIGTERM, &ignoreAction, NULL);
                     
+                    
+                    /* Handles background processes with continuing execution with WNOHANG. Will not execute
+                     if in foreground only mode */
                     if (commandLineArgs[strlen(commandLineArgs) - 2] == '&' && toggle_mode)    /***********/
                     {
                         wait_pid_return = waitpid(-1, &exitMethod, WNOHANG);
@@ -352,7 +427,10 @@ int main(int argc, const char *argv[])
                     }
                     else
                     {
-                        waitpid(spawnChild, &exitMethod, 0);  /* Block parent process until child process terminates */
+                        
+                        /* Handles foreground processes waiting for foreground process to terminated before
+                         resuming execution in the parent process */
+                        waitpid(spawnChild, &exitMethod, 0);            /* Block parent process until child process terminates */
                         waitpid(spawnChild, &exitMethod, 0);
                         
                         /* An exit status will be returned if the child process terminated successfully */
@@ -367,7 +445,7 @@ int main(int argc, const char *argv[])
                         {
                             if (WTERMSIG(exitMethod) != 127 && WTERMSIG(exitMethod) != 11)
                             {
-                                if (WTERMSIG(exitMethod) == 0) {}
+                                if (WTERMSIG(exitMethod) == 0) {}   /* Catches a SIGTSTP pressed during a foreground process execution */
                                 
                                 memset(childExitStatus, '\0', sizeof(childExitStatus));
                                 sprintf(childExitStatus, "terminated by signal %d\n", WTERMSIG(exitMethod));
@@ -381,6 +459,8 @@ int main(int argc, const char *argv[])
             
         }
         
+        /* Will be set to 5 if a SIGTSTP signal was sent. Handles the toggling between
+          foreground only mode and normal mode */
         if (toggle_handler == 5)
         {
             if (toggle_mode)
@@ -397,6 +477,7 @@ int main(int argc, const char *argv[])
             }
         }
         
+        /* Clean up any zombie processes that terminated via successful termination and signals */
         for (i = 0; i < 5; i++)
         {
             wait_pid_return = waitpid(-1, &exitMethod, WNOHANG);
@@ -418,7 +499,7 @@ int main(int argc, const char *argv[])
         
         toggle_handler = -1;
         count = 0;
-    } while (strcmp(commandLineArgs, EXIT) != 0);
+    } while (strcmp(commandLineArgs, EXIT) != 0); /* Input entered was 'exit' */
     free(commandLineArgs);
     
     
@@ -428,6 +509,7 @@ int main(int argc, const char *argv[])
 
 /****************************************************************************************/
 
+/* File redirection check helper */
 int checkFlags(int readFlag, int writeFlag)
 {
     if (readFlag && writeFlag)          /* Both redirection flags were set */
@@ -446,10 +528,8 @@ int checkFlags(int readFlag, int writeFlag)
     return 0;                           /* Neither one of the redirection flags were set */
 }
 
-void signalFunction(int signal)
-{
-    
-}
+/* Signal handling functions */
+void signalFunction(int signal){}
 
 void toggleFunction(int signal)
 {
